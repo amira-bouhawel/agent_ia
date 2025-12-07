@@ -1,5 +1,6 @@
 import chromadb
 from sentence_transformers import SentenceTransformer
+import re
 
 # ==========================
 # 📌 Configuration ChromaDB
@@ -26,6 +27,23 @@ print("🧠 Modèle all-MiniLM-L6-v2 chargé avec succès.\n")
 print("🔎 Système RAG interactif pour tes CV")
 print("Tape 'exit' pour quitter.\n")
 
+
+def extraire_personal_detail(segment, question):
+    """
+    Extraction ciblée de la valeur correspondant à la question
+    dans la section Personal Details.
+    """
+    question_clean = question.lower()
+    segment_lines = segment.splitlines()
+    for line in segment_lines:
+        if question_clean in line.lower():
+            # Extraire tout après le ":"
+            match = re.split(r":\s*", line, maxsplit=1)
+            if len(match) == 2:
+                return match[1].strip()
+    return None
+
+
 while True:
     query = input("👉 Pose ta question : ").strip()
     if query.lower() in ["exit", "quit"]:
@@ -39,22 +57,45 @@ while True:
     # ➤ Génération embedding pour la requête
     query_embedding = model.encode(query).tolist()
 
-    # ➤ Recherche vectorielle top 5 résultats
+    # ➤ Recherche vectorielle top 10 résultats pour trouver le segment le plus pertinent
     results = collection.query(
         query_embeddings=[query_embedding],
-        n_results=5
+        n_results=10
     )
 
     documents = results.get("documents", [[]])[0]
     ids = results.get("ids", [[]])[0]
+    distances = results.get("distances", [[]])[0]  # Score de similarité
 
     if not documents:
         print("❌ Aucun résultat trouvé pour cette question.\n")
         continue
 
-    print("\n📌 RÉSULTATS TROUVÉS :\n")
-    for i, (doc, doc_id) in enumerate(zip(documents, ids), start=1):
-        print(f"--- Résultat {i} ---")
-        print(f"(CV ID: {doc_id})")
-        print(doc)
+    # ➤ Extraire la réponse exacte si la question correspond à Personal Details
+    meilleur_score = -1
+    meilleur_doc = ""
+    meilleur_id = None
+    valeur_extraite = None
+
+    for doc, doc_id, dist in zip(documents, ids, distances):
+        extracted = extraire_personal_detail(doc, query)
+        if extracted:
+            meilleur_score = dist
+            meilleur_doc = doc
+            meilleur_id = doc_id
+            valeur_extraite = extracted
+            break
+
+    if valeur_extraite:
+        print("\n📌 RÉSULTAT LE PLUS PRÉCIS :\n")
+        print(f"(CV ID: {meilleur_id})")
+        print(valeur_extraite)
+        print(f"🧠 Score de similarité : {meilleur_score:.4f}")
+        print("-" * 50)
+    else:
+        # Si pas d'extraction exacte → montrer le segment le plus proche
+        print("\n📌 SEGMENT LE PLUS PERTINENT :\n")
+        print(f"(CV ID: {ids[0]})")
+        print(documents[0])
+        print(f"🧠 Score de similarité : {distances[0]:.4f}")
         print("-" * 50)

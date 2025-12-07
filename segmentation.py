@@ -1,7 +1,6 @@
 import sqlite3
 import re
 
-
 # ---------- Nettoyage avancé ------
 
 
@@ -26,26 +25,39 @@ def segmenter_texte(txt):
     if not txt:
         return []
 
-    # 1) essayer la segmentation normale sur 2 sauts de ligne
+    # 1) segmentation sur 2 sauts de ligne
     segments = re.split(r"\n\s*\n", txt)
 
-    # Si 1 seul segment → essayer par points, listes, rubrique
+    # 2) segmentation par points, listes ou tirets si un seul segment
     if len(segments) == 1:
         segments = re.split(r"[•\-–]\s+|\. ", txt)
 
-    # Si encore 1 seul → découper toutes les 300-400 chars
+    # 3) découper toutes les 300-350 caractères si encore un seul segment
     if len(segments) == 1:
         taille = 350
         segments = [txt[i:i + taille] for i in range(0, len(txt), taille)]
 
+    # 4) améliorer précision en regroupant sections logiques si possible
+    sections_keywords = ["personal", "education", "employment", "skills", "project", "internship"]
+    new_segments = []
+    for s in segments:
+        lower_s = s.lower()
+        for kw in sections_keywords:
+            if kw in lower_s:
+                # découper plus finement autour des sections
+                sub_segments = re.split(r"\n|\. ", s)
+                new_segments.extend([ss.strip() for ss in sub_segments if len(ss.strip()) > 30])
+                break
+        else:
+            new_segments.append(s.strip())
+
     # Nettoyer segments vides
-    return [s.strip() for s in segments if len(s.strip()) > 30]
+    return [s for s in new_segments if len(s) > 30]
 
 
 # ======================================================
 #               CHARGER CVS.BD + CREER RAG
 # ======================================================
-
 print("📥 Chargement de cvs.db ...")
 conn = sqlite3.connect("cvs.db")
 c = conn.cursor()
